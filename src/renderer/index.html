@@ -109,12 +109,29 @@
   <div class="export-bar">
     <div class="export-info">
       <span id="selected-count">Выбрано: 0 записей</span>
+      <label class="export-toggle" title="Экспортировать полные поддомены вместо registered domain"><input type="checkbox" id="toggle-fqdn-export"> FQDN</label>
+    </div>
+    <div class="stats-bar" id="stats-bar">
+      <span class="stat-item">Всего: <span id="stat-total">0</span></span>
+      <span class="stat-sep">|</span>
+      <span class="stat-item">Домены: <span id="stat-domains">0</span></span>
+      <span class="stat-sep">|</span>
+      <span class="stat-item stat-tunneled">Туннель: <span id="stat-tunneled">0</span></span>
+      <span class="stat-sep">|</span>
+      <span class="stat-item stat-failed">Ошибки: <span id="stat-failed">0</span></span>
     </div>
     <div class="export-buttons">
       <button id="btn-export-domains" class="btn btn-secondary">Экспорт доменов</button>
       <button id="btn-export-ips" class="btn btn-secondary">Экспорт IP/подсетей</button>
       <button id="btn-export-json" class="btn btn-secondary">Экспорт JSON</button>
     </div>
+  </div>
+
+  <!-- Context menu -->
+  <div id="context-menu" class="context-menu hidden">
+    <div class="context-menu-item" data-action="copy-domain">Копировать домен</div>
+    <div class="context-menu-item" data-action="copy-ip">Копировать IP</div>
+    <div class="context-menu-item" data-action="copy-all">Копировать всё</div>
   </div>
 
   <script src="app.js"></script>

@@ -31,7 +31,14 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.toolbar, .export-bar, .blacklist-panel, .process-dropdown, .table-toolbar {
   user-select: none;
+}
+
+.table-wrapper td {
+  user-select: text;
 }
 
 /* === Warning banner === */
@@ -749,5 +756,70 @@ tr.conn-failed:hover td {
   50% { opacity: 1; }
 }
 
+/* === Context menu === */
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  padding: 4px 0;
+  min-width: 180px;
+}
 
+.context-menu-item {
+  padding: 7px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.context-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+/* === Export toggle === */
+.export-toggle {
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  margin-left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* === Process limit notice === */
+.proc-limit-notice {
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--warning);
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border);
+}
+
+/* === Stats bar === */
+.stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.stat-sep {
+  color: var(--text-muted);
+  margin: 0 2px;
+}
+
+.stat-tunneled span {
+  color: var(--success);
+}
+
+.stat-failed span {
+  color: var(--accent);
+}
 

@@ -140,6 +140,26 @@ ipcMain.handle("save-file", async (event, { defaultName, filters, content }) => 
   return null;
 });
 
+const settingsPath = path.join(app.getPath("userData"), "settings.json");
+
+ipcMain.handle("save-settings", (event, data) => {
+  try {
+    fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2), "utf-8");
+    return true;
+  } catch {
+    return false;
+  }
+});
+
+ipcMain.handle("load-settings", () => {
+  try {
+    if (fs.existsSync(settingsPath)) {
+      return JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+    }
+  } catch {}
+  return {};
+});
+
 app.whenReady().then(async () => {
   createWindow();
   try {

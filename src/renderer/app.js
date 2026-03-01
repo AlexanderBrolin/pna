@@ -14,6 +14,7 @@ let hideBlacklisted = true;
 let hideTunneled = false;
 let blacklistPatterns = [];
 let tunnelSubnets = ["10.29.0.0/16", "10.30.0.0/15"];
+let exportFqdn = false;
 let sortColumn = "last_seen";
 let sortDirection = "desc";
 let tableFilter = "";
@@ -50,6 +51,12 @@ const $tunnelSubnetInput = document.getElementById("tunnel-subnet-input");
 const $btnAddTunnelSubnet = document.getElementById("btn-add-tunnel-subnet");
 const $tunnelSubnetList = document.getElementById("tunnel-subnet-list");
 const $trackingIndicator = document.getElementById("tracking-indicator");
+const $toggleFqdnExport = document.getElementById("toggle-fqdn-export");
+const $contextMenu = document.getElementById("context-menu");
+const $statTotal = document.getElementById("stat-total");
+const $statDomains = document.getElementById("stat-domains");
+const $statTunneled = document.getElementById("stat-tunneled");
+const $statFailed = document.getElementById("stat-failed");
 
 // === WebSocket ===
 
@@ -60,6 +67,7 @@ function connectWebSocket() {
     connected = true;
     showWarning(null);
     send({ type: "get_blacklist" });
+    loadSavedSettings();
   };
 
   ws.onmessage = (event) => {
@@ -251,7 +259,7 @@ function filterProcessDropdown(query) {
   let html = "";
   let shown = 0;
   for (const group of groups) {
-    if (shown >= 80) break;
+    if (shown >= 128) break;
     const count = group.procs.length;
     const isExpanded = expandedGroups.has(group.name.toLowerCase());
 
@@ -290,6 +298,10 @@ function filterProcessDropdown(query) {
       }
       shown++;
     }
+  }
+
+  if (shown >= 128 && shown < groups.length) {
+    html += `<div class="proc-limit-notice">Показано ${shown} из ${groups.length}. Уточните поиск.</div>`;
   }
 
   $processDropdown.innerHTML = html;
@@ -493,6 +505,7 @@ function renderTable() {
   });
 
   updateSelectedCount();
+  updateStats();
 }
 
 function highlightRow(domain) {
@@ -562,6 +575,7 @@ $btnCloseBlacklist.addEventListener("click", () => {
 $toggleHideBlacklisted.addEventListener("change", () => {
   hideBlacklisted = $toggleHideBlacklisted.checked;
   renderTable();
+  persistSettings();
 });
 
 $btnAddBlacklist.addEventListener("click", () => {
@@ -570,6 +584,7 @@ $btnAddBlacklist.addEventListener("click", () => {
     blacklistPatterns.push(pattern);
     send({ type: "update_blacklist", patterns: blacklistPatterns });
     $blacklistInput.value = "";
+    persistSettings();
   }
 });
 
@@ -593,6 +608,7 @@ function renderBlacklistList() {
       const idx = parseInt(btn.dataset.index);
       blacklistPatterns.splice(idx, 1);
       send({ type: "update_blacklist", patterns: blacklistPatterns });
+      persistSettings();
     });
   });
 }
@@ -602,6 +618,7 @@ function renderBlacklistList() {
 $toggleHideTunneled.addEventListener("change", () => {
   hideTunneled = $toggleHideTunneled.checked;
   renderTable();
+  persistSettings();
 });
 
 // === Tunnel subnets ===
@@ -612,6 +629,7 @@ $btnAddTunnelSubnet.addEventListener("click", () => {
     tunnelSubnets.push(subnet);
     send({ type: "update_tunnel_networks", networks: tunnelSubnets });
     $tunnelSubnetInput.value = "";
+    persistSettings();
   }
 });
 
@@ -635,6 +653,7 @@ function renderTunnelSubnetList() {
       const idx = parseInt(btn.dataset.index);
       tunnelSubnets.splice(idx, 1);
       send({ type: "update_tunnel_networks", networks: tunnelSubnets });
+      persistSettings();
     });
   });
 }
@@ -664,7 +683,7 @@ $btnExportDomains.addEventListener("click", async () => {
     return;
   }
 
-  const domains = [...new Set(selected.map((e) => e.registered_domain))].sort();
+  const domains = [...new Set(selected.map((e) => exportFqdn ? e.domain : e.registered_domain))].sort();
   const header = getExportHeader();
   const content = [...header, `# Entries: ${domains.length}`, "", ...domains, ""].join("\n");
   await saveFile("domains.txt", [{ name: "Text", extensions: ["txt"] }], content);
@@ -783,6 +802,110 @@ function formatTime(isoStr) {
     return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   } catch {
     return isoStr;
+  }
+}
+
+// === FQDN toggle ===
+
+$toggleFqdnExport.addEventListener("change", () => {
+  exportFqdn = $toggleFqdnExport.checked;
+});
+
+// === Context menu ===
+
+let contextMenuEntry = null;
+
+$tableBody.addEventListener("contextmenu", (e) => {
+  const tr = e.target.closest("tr");
+  if (!tr || !tr.dataset.domain) return;
+  e.preventDefault();
+  contextMenuEntry = entries.get(tr.dataset.domain);
+  if (!contextMenuEntry) return;
+  $contextMenu.style.left = e.clientX + "px";
+  $contextMenu.style.top = e.clientY + "px";
+  $contextMenu.classList.remove("hidden");
+});
+
+document.addEventListener("click", () => {
+  $contextMenu.classList.add("hidden");
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    $contextMenu.classList.add("hidden");
+  }
+});
+
+$contextMenu.addEventListener("click", (e) => {
+  const item = e.target.closest(".context-menu-item");
+  if (!item || !contextMenuEntry) return;
+  const action = item.dataset.action;
+  let text = "";
+  if (action === "copy-domain") {
+    text = contextMenuEntry.domain;
+  } else if (action === "copy-ip") {
+    text = (contextMenuEntry.ips || []).join(", ");
+  } else if (action === "copy-all") {
+    text = [
+      contextMenuEntry.domain,
+      contextMenuEntry.registered_domain,
+      (contextMenuEntry.ips || []).join(", "),
+      (contextMenuEntry.ports || []).join(", "),
+    ].join("\t");
+  }
+  navigator.clipboard.writeText(text);
+  $contextMenu.classList.add("hidden");
+});
+
+// === Statistics ===
+
+function updateStats() {
+  const all = Array.from(entries.values());
+  $statTotal.textContent = all.length;
+  $statDomains.textContent = new Set(all.map((e) => e.registered_domain)).size;
+  $statTunneled.textContent = all.filter((e) => e.tunneled).length;
+  $statFailed.textContent = all.filter((e) => e.conn_failed).length;
+}
+
+// === Settings persistence ===
+
+function persistSettings() {
+  if (window.electronAPI && window.electronAPI.saveSettings) {
+    window.electronAPI.saveSettings({
+      blacklistPatterns,
+      tunnelSubnets,
+      hideTunneled,
+      hideBlacklisted,
+    });
+  }
+}
+
+async function loadSavedSettings() {
+  if (!window.electronAPI || !window.electronAPI.loadSettings) return;
+  try {
+    const s = await window.electronAPI.loadSettings();
+    if (!s || typeof s !== "object") return;
+    if (Array.isArray(s.blacklistPatterns) && s.blacklistPatterns.length > 0) {
+      blacklistPatterns = s.blacklistPatterns;
+      send({ type: "update_blacklist", patterns: blacklistPatterns });
+      renderBlacklistList();
+    }
+    if (Array.isArray(s.tunnelSubnets) && s.tunnelSubnets.length > 0) {
+      tunnelSubnets = s.tunnelSubnets;
+      send({ type: "update_tunnel_networks", networks: tunnelSubnets });
+      renderTunnelSubnetList();
+    }
+    if (typeof s.hideTunneled === "boolean") {
+      hideTunneled = s.hideTunneled;
+      $toggleHideTunneled.checked = hideTunneled;
+    }
+    if (typeof s.hideBlacklisted === "boolean") {
+      hideBlacklisted = s.hideBlacklisted;
+      $toggleHideBlacklisted.checked = hideBlacklisted;
+    }
+    renderTable();
+  } catch (err) {
+    console.error("Failed to load settings:", err);
   }
 }
 
