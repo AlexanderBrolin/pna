@@ -1,0 +1,37 @@
+{
+  "name": "process-net-analyzer",
+  "version": "1.0.0",
+  "description": "Process Network Analyzer - monitors network activity of selected processes",
+  "main": "src/main.js",
+  "author": "ProcessNetAnalyzer",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --dir",
+    "build-exe": "electron-builder --win",
+    "install-python": "pip install -r backend/requirements.txt"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.processnetanalyzer.app",
+    "productName": "Process Network Analyzer",
+    "win": {
+      "target": "dir",
+      "requestedExecutionLevel": "requireAdministrator",
+      "sign": "./sign.js"
+    },
+    "forceCodeSigning": false,
+    "files": [
+      "src/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "backend",
+        "to": "backend"
+      }
+    ],
+    "asar": true
+  }
+}

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src ws://localhost:18765; style-src 'self' 'unsafe-inline'; script-src 'self';">
+  <title>Process Network Analyzer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Warning banner -->
+  <div id="warning-banner" class="warning-banner hidden"></div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <div class="process-selector">
+        <input type="text" id="process-search" placeholder="Поиск процесса..." autocomplete="off">
+        <div id="process-dropdown" class="process-dropdown hidden"></div>
+      </div>
+      <button id="btn-refresh" class="btn btn-secondary" title="Обновить список процессов">⟳</button>
+      <button id="btn-toggle-capture" class="btn btn-capture" disabled>
+        <span class="capture-icon"></span>
+        <span class="capture-label">Начать запись</span>
+      </button>
+      <span id="capture-target" class="capture-target"></span>
+    </div>
+    <div class="toolbar-right">
+      <button id="btn-clear" class="btn btn-secondary">Очистить</button>
+      <button id="btn-toggle-blacklist" class="btn btn-secondary">Фильтры</button>
+    </div>
+  </div>
+
+  <!-- Main content area -->
+  <div class="main-content">
+    <!-- Table area -->
+    <div class="table-container">
+      <div class="table-toolbar">
+        <input type="text" id="table-search" placeholder="Поиск по таблице..." class="table-search">
+        <div class="table-actions">
+          <button id="btn-select-all" class="btn btn-small">Выбрать все</button>
+          <button id="btn-deselect-all" class="btn btn-small">Снять все</button>
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <table id="data-table">
+          <thead>
+            <tr>
+              <th class="col-check"><input type="checkbox" id="check-all"></th>
+              <th class="col-domain sortable" data-sort="domain">Домен</th>
+              <th class="col-registered sortable" data-sort="registered_domain">Registered Domain</th>
+              <th class="col-ips">IP-адреса</th>
+              <th class="col-ports">Порты</th>
+              <th class="col-protocol sortable" data-sort="protocol">Протокол</th>
+              <th class="col-hits sortable" data-sort="hit_count">Обращений</th>
+              <th class="col-lastseen sortable" data-sort="last_seen">Последнее</th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      <div class="table-empty" id="table-empty">
+        <p>Нет данных. Выберите процесс и начните запись.</p>
+      </div>
+    </div>
+
+    <!-- Blacklist sidebar -->
+    <div id="blacklist-panel" class="blacklist-panel hidden">
+      <div class="panel-header">
+        <h3>Фильтры (Blacklist)</h3>
+        <button id="btn-close-blacklist" class="btn-close">✕</button>
+      </div>
+      <div class="panel-content">
+        <div class="blacklist-toggle">
+          <label>
+            <input type="checkbox" id="toggle-hide-blacklisted" checked>
+            Скрывать отфильтрованное
+          </label>
+        </div>
+        <div class="blacklist-add">
+          <input type="text" id="blacklist-input" placeholder="*.example.com">
+          <button id="btn-add-blacklist" class="btn btn-small btn-primary">Добавить</button>
+        </div>
+        <div id="blacklist-list" class="blacklist-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export bar -->
+  <div class="export-bar">
+    <div class="export-info">
+      <span id="selected-count">Выбрано: 0 записей</span>
+    </div>
+    <div class="export-buttons">
+      <button id="btn-export-domains" class="btn btn-secondary">Экспорт доменов</button>
+      <button id="btn-export-ips" class="btn btn-secondary">Экспорт IP/подсетей</button>
+      <button id="btn-export-json" class="btn btn-secondary">Экспорт JSON</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
