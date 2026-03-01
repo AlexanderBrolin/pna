@@ -1,6 +1,6 @@
 {
   "name": "process-net-analyzer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Process Network Analyzer - monitors network activity of selected processes",
   "main": "src/main.js",
   "author": "ProcessNetAnalyzer",

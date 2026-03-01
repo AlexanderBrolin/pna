@@ -11,10 +11,13 @@ const entries = new Map();
 const selectedEntries = new Set();
 
 let hideBlacklisted = true;
+let hideTunneled = false;
 let blacklistPatterns = [];
+let tunnelSubnets = ["10.29.0.0/16", "10.30.0.0/15"];
 let sortColumn = "last_seen";
 let sortDirection = "desc";
 let tableFilter = "";
+
 
 // === DOM refs ===
 const $warningBanner = document.getElementById("warning-banner");
@@ -42,6 +45,11 @@ const $selectedCount = document.getElementById("selected-count");
 const $btnExportDomains = document.getElementById("btn-export-domains");
 const $btnExportIps = document.getElementById("btn-export-ips");
 const $btnExportJson = document.getElementById("btn-export-json");
+const $toggleHideTunneled = document.getElementById("toggle-hide-tunneled");
+const $tunnelSubnetInput = document.getElementById("tunnel-subnet-input");
+const $btnAddTunnelSubnet = document.getElementById("btn-add-tunnel-subnet");
+const $tunnelSubnetList = document.getElementById("tunnel-subnet-list");
+const $trackingIndicator = document.getElementById("tracking-indicator");
 
 // === WebSocket ===
 
@@ -92,6 +100,7 @@ function handleMessage(msg) {
         ? `${msg.process_name} (${pids.length} процессов)`
         : `${msg.process_name} (PID ${pids[0]})`;
       setCaptureButton("recording", label);
+      $trackingIndicator.classList.remove("hidden");
       break;
     }
 
@@ -110,6 +119,7 @@ function handleMessage(msg) {
     case "capture_stopped":
       capturing = false;
       setCaptureButton("idle");
+      $trackingIndicator.classList.add("hidden");
       break;
 
     case "entry_updated":
@@ -145,6 +155,13 @@ function handleMessage(msg) {
       break;
 
     case "subnets":
+      break;
+
+    case "tunnel_networks_updated":
+      tunnelSubnets = msg.networks || [];
+      renderTunnelSubnetList();
+      // Re-request snapshot to refresh tunneled status
+      send({ type: "get_snapshot" });
       break;
 
     case "warning":
@@ -374,6 +391,10 @@ function getVisibleEntries() {
     arr = arr.filter((e) => !e.blacklisted);
   }
 
+  if (hideTunneled) {
+    arr = arr.filter((e) => !e.tunneled);
+  }
+
   if (tableFilter) {
     arr = arr.filter(
       (e) =>
@@ -390,6 +411,11 @@ function getVisibleEntries() {
     if (sortColumn === "hit_count") {
       va = va || 0;
       vb = vb || 0;
+      return sortDirection === "asc" ? va - vb : vb - va;
+    }
+    if (sortColumn === "tunneled") {
+      va = va ? 1 : 0;
+      vb = vb ? 1 : 0;
       return sortDirection === "asc" ? va - vb : vb - va;
     }
     va = String(va || "").toLowerCase();
@@ -424,7 +450,9 @@ function renderTable() {
       const checked = selectedEntries.has(e.domain) ? "checked" : "";
       const blStyle = e.blacklisted ? ' style="opacity:0.5"' : "";
       const rdnsCls = resolveStatusClass(e);
-      const trClass = rdnsCls ? ` class="${rdnsCls}"` : "";
+      const failedCls = e.conn_failed ? " conn-failed" : "";
+      const classes = [rdnsCls, failedCls].filter(Boolean).join(" ");
+      const trClass = classes ? ` class="${classes}"` : "";
       const ips = (e.ips || []).join(", ");
       const ports = (e.ports || []).join(", ");
       const lastSeen = formatTime(e.last_seen);
@@ -434,13 +462,18 @@ function renderTable() {
       } else if (e.resolve_status === "resolved" && e.source !== "dns") {
         rdnsDot = '<span class="rdns-indicator resolved" title="rDNS"></span>';
       }
-      return `<tr data-domain="${escapeAttr(e.domain)}" id="row-${cssId(e.domain)}"${blStyle}${trClass}>
+      const tunnelIcon = e.tunneled
+        ? '<span class="tunnel-icon tunneled" title="В туннеле (VPN)">&#x1F6E1;</span>'
+        : '<span class="tunnel-icon direct" title="Напрямую">&#x2192;</span>';
+      const failedTitle = e.conn_failed ? ' title="Обнаружены неуспешные подключения"' : "";
+      return `<tr data-domain="${escapeAttr(e.domain)}" id="row-${cssId(e.domain)}"${blStyle}${trClass}${failedTitle}>
         <td class="col-check"><input type="checkbox" ${checked} data-domain="${escapeAttr(e.domain)}"></td>
         <td class="col-domain mono">${escapeHtml(e.domain)}${rdnsDot}</td>
         <td class="col-registered mono">${escapeHtml(e.registered_domain)}</td>
         <td class="col-ips"><div class="ip-list">${escapeHtml(ips)}</div></td>
         <td class="col-ports"><span class="port-list">${escapeHtml(ports)}</span></td>
         <td class="col-protocol">${escapeHtml(e.protocol || "")}</td>
+        <td class="col-tunnel">${tunnelIcon}</td>
         <td class="col-hits">${e.hit_count || 0}</td>
         <td class="col-lastseen mono">${lastSeen}</td>
       </tr>`;
@@ -563,6 +596,51 @@ function renderBlacklistList() {
     });
   });
 }
+
+// === Tunnel filter ===
+
+$toggleHideTunneled.addEventListener("change", () => {
+  hideTunneled = $toggleHideTunneled.checked;
+  renderTable();
+});
+
+// === Tunnel subnets ===
+
+$btnAddTunnelSubnet.addEventListener("click", () => {
+  const subnet = $tunnelSubnetInput.value.trim();
+  if (subnet && !tunnelSubnets.includes(subnet)) {
+    tunnelSubnets.push(subnet);
+    send({ type: "update_tunnel_networks", networks: tunnelSubnets });
+    $tunnelSubnetInput.value = "";
+  }
+});
+
+$tunnelSubnetInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $btnAddTunnelSubnet.click();
+});
+
+function renderTunnelSubnetList() {
+  $tunnelSubnetList.innerHTML = tunnelSubnets
+    .map(
+      (s, i) =>
+        `<div class="blacklist-item">
+          <span>${escapeHtml(s)}</span>
+          <button data-index="${i}" title="Удалить">✕</button>
+        </div>`
+    )
+    .join("");
+
+  $tunnelSubnetList.querySelectorAll("button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.dataset.index);
+      tunnelSubnets.splice(idx, 1);
+      send({ type: "update_tunnel_networks", networks: tunnelSubnets });
+    });
+  });
+}
+
+// Initial render of default subnets
+renderTunnelSubnetList();
 
 // === Export ===
 

@@ -9,6 +9,13 @@ from datetime import datetime, timezone
 import tldextract
 
 
+# Default AntiZapret-VPN tunnel IP ranges
+_DEFAULT_TUNNEL_NETWORKS = [
+    ipaddress.ip_network("10.29.0.0/16"),
+    ipaddress.ip_network("10.30.0.0/15"),
+]
+
+
 def _normalize_ip(ip_str: str) -> str:
     """Normalize IP: strip ::ffff: prefix, whitespace, trailing dots."""
     ip_str = ip_str.strip().rstrip(".")
@@ -27,6 +34,40 @@ class Aggregator:
         self._ip_to_domain = {}
         # ip-only entries (no domain resolved yet), keyed by ip string
         self._ip_only = {}
+        # Tunnel networks for VPN detection
+        self._tunnel_networks = list(_DEFAULT_TUNNEL_NETWORKS)
+
+    def set_tunnel_networks(self, cidrs):
+        """Replace tunnel networks with given CIDR list and re-evaluate all entries."""
+        with self._lock:
+            nets = []
+            for cidr in cidrs:
+                try:
+                    nets.append(ipaddress.ip_network(cidr, strict=False))
+                except ValueError:
+                    pass
+            self._tunnel_networks = nets if nets else list(_DEFAULT_TUNNEL_NETWORKS)
+            for entry in self._entries.values():
+                entry["tunneled"] = self._check_tunneled(entry["ips"])
+            for entry in self._ip_only.values():
+                entry["tunneled"] = self._check_tunneled(entry["ips"])
+
+    def get_tunnel_networks(self):
+        """Return current tunnel networks as CIDR strings."""
+        with self._lock:
+            return [str(n) for n in self._tunnel_networks]
+
+    def _is_tunneled(self, ip_str):
+        """Check if a single IP falls within tunnel networks."""
+        try:
+            addr = ipaddress.ip_address(ip_str)
+            return any(addr in net for net in self._tunnel_networks)
+        except ValueError:
+            return False
+
+    def _check_tunneled(self, ips):
+        """Check if any IP in the list is tunneled."""
+        return any(self._is_tunneled(ip) for ip in ips)
 
     def clear(self):
         with self._lock:
@@ -78,6 +119,8 @@ class Aggregator:
                             "hit_count": ip_entry["hit_count"],
                             "source": "both",
                             "resolve_status": "resolved",
+                            "tunneled": self._check_tunneled(resolved_ips),
+                            "conn_failed": ip_entry.get("conn_failed", False),
                         }
                         self._entries[domain] = entry
                     else:
@@ -95,6 +138,9 @@ class Aggregator:
                         entry["hit_count"] += ip_entry["hit_count"]
                         entry["last_seen"] = now
                         entry["source"] = "both"
+                        entry["tunneled"] = self._check_tunneled(entry["ips"])
+                        if ip_entry.get("conn_failed"):
+                            entry["conn_failed"] = True
                     result_entry = dict(entry)
 
             # If DNS query came from a tracked process, create entry even without connection
@@ -113,6 +159,8 @@ class Aggregator:
                         "hit_count": 1,
                         "source": "dns",
                         "resolve_status": "resolved",
+                        "tunneled": self._check_tunneled(resolved_ips),
+                        "conn_failed": False,
                     }
                     self._entries[domain] = entry
                 else:
@@ -121,6 +169,7 @@ class Aggregator:
                     entry["ips"] = list(existing_ips)
                     entry["last_seen"] = now
                     entry["hit_count"] += 1
+                    entry["tunneled"] = self._check_tunneled(entry["ips"])
                 result_entry = dict(entry)
 
         return result_entry
@@ -161,6 +210,7 @@ class Aggregator:
                     entry["hit_count"] += 1
                     if entry["source"] == "dns":
                         entry["source"] = "both"
+                    entry["tunneled"] = self._check_tunneled(entry["ips"])
                     return dict(entry)
                 else:
                     # Domain known from DNS but no entry yet — create it
@@ -176,6 +226,8 @@ class Aggregator:
                         "hit_count": 1,
                         "source": "both",
                         "resolve_status": "resolved",
+                        "tunneled": self._is_tunneled(dest_ip),
+                        "conn_failed": False,
                     }
                     self._entries[domain] = entry
                     return dict(entry)
@@ -205,6 +257,8 @@ class Aggregator:
                     "hit_count": 1,
                     "source": "connection",
                     "resolve_status": "pending",
+                    "tunneled": self._is_tunneled(dest_ip),
+                    "conn_failed": False,
                 }
                 self._ip_only[dest_ip] = entry
                 return dict(entry)
@@ -243,6 +297,8 @@ class Aggregator:
                     "hit_count": ip_entry["hit_count"],
                     "source": ip_entry.get("source", "connection"),
                     "resolve_status": "resolved",
+                    "tunneled": self._check_tunneled(ip_entry["ips"]),
+                    "conn_failed": ip_entry.get("conn_failed", False),
                 }
                 self._entries[hostname] = entry
             else:
@@ -260,9 +316,29 @@ class Aggregator:
                 existing["hit_count"] += ip_entry["hit_count"]
                 existing["last_seen"] = now
                 existing["resolve_status"] = "resolved"
+                existing["tunneled"] = self._check_tunneled(existing["ips"])
+                if ip_entry.get("conn_failed"):
+                    existing["conn_failed"] = True
                 entry = existing
 
             return dict(entry)
+
+    def mark_connection_failed(self, dest_ip: str):
+        """Mark entry containing this IP as having failed connections.
+        Returns updated entry dict or None.
+        """
+        dest_ip = _normalize_ip(dest_ip)
+        with self._lock:
+            # Check domain entries
+            domain = self._ip_to_domain.get(dest_ip)
+            if domain and domain in self._entries:
+                self._entries[domain]["conn_failed"] = True
+                return dict(self._entries[domain])
+            # Check ip_only entries
+            if dest_ip in self._ip_only:
+                self._ip_only[dest_ip]["conn_failed"] = True
+                return dict(self._ip_only[dest_ip])
+        return None
 
     def get_ip_only_keys(self):
         """Return current set of ip_only keys (for detecting merges)."""

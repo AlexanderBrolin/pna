@@ -26,6 +26,10 @@
       <span id="capture-target" class="capture-target"></span>
     </div>
     <div class="toolbar-right">
+      <span id="tracking-indicator" class="tracking-indicator hidden">
+        <span class="tracking-dot"></span>
+        Мониторинг
+      </span>
       <button id="btn-clear" class="btn btn-secondary">Очистить</button>
       <button id="btn-toggle-blacklist" class="btn btn-secondary">Фильтры</button>
     </div>
@@ -52,6 +56,7 @@
               <th class="col-ips">IP-адреса</th>
               <th class="col-ports">Порты</th>
               <th class="col-protocol sortable" data-sort="protocol">Протокол</th>
+              <th class="col-tunnel sortable" data-sort="tunneled">Туннель</th>
               <th class="col-hits sortable" data-sort="hit_count">Обращений</th>
               <th class="col-lastseen sortable" data-sort="last_seen">Последнее</th>
             </tr>
@@ -71,6 +76,20 @@
         <button id="btn-close-blacklist" class="btn-close">✕</button>
       </div>
       <div class="panel-content">
+        <div class="blacklist-toggle">
+          <label>
+            <input type="checkbox" id="toggle-hide-tunneled">
+            Скрыть туннелированные
+          </label>
+        </div>
+        <div class="tunnel-subnets-section">
+          <div class="section-label">Подсети туннеля</div>
+          <div class="tunnel-add">
+            <input type="text" id="tunnel-subnet-input" placeholder="10.0.0.0/8">
+            <button id="btn-add-tunnel-subnet" class="btn btn-small btn-primary">Добавить</button>
+          </div>
+          <div id="tunnel-subnet-list" class="blacklist-list"></div>
+        </div>
         <div class="blacklist-toggle">
           <label>
             <input type="checkbox" id="toggle-hide-blacklisted" checked>

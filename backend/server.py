@@ -94,6 +94,12 @@ class Backend:
             for ip in merged_ips:
                 self._queue_remove(ip)
 
+    def _on_connection_failed(self, ip, port, protocol):
+        """Called when a TCP connection failed (SYN_SENT timeout)."""
+        entry = self.aggregator.mark_connection_failed(ip)
+        if entry:
+            self._queue_update(entry)
+
     def _queue_update(self, entry):
         with self._pending_lock:
             self._pending_updates.append(entry)
@@ -226,6 +232,14 @@ class Backend:
             subnets = Aggregator.aggregate_ips_to_subnets(ips)
             await ws.send(json.dumps({"type": "subnets", "subnets": subnets}))
 
+        elif msg_type == "update_tunnel_networks":
+            networks = msg.get("networks", [])
+            self.aggregator.set_tunnel_networks(networks)
+            await ws.send(json.dumps({
+                "type": "tunnel_networks_updated",
+                "networks": self.aggregator.get_tunnel_networks(),
+            }))
+
         else:
             await ws.send(json.dumps({"type": "error", "message": f"Unknown type: {msg_type}"}))
 
@@ -258,6 +272,7 @@ class Backend:
                     self.process_tree,
                     self._on_dns_event,
                     self._on_connection_event,
+                    self._on_connection_failed,
                 )
                 self.tracer.start()
             except Exception as e:

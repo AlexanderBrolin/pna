@@ -484,13 +484,16 @@ tr.rdns-resolved:hover td {
 
 /* Column widths */
 .col-check { width: 40px; text-align: center; }
-.col-domain { width: 22%; }
-.col-registered { width: 14%; }
-.col-ips { width: 18%; }
-.col-ports { width: 10%; }
-.col-protocol { width: 8%; }
-.col-hits { width: 8%; text-align: right; }
-.col-lastseen { width: 12%; }
+.col-domain { width: 20%; }
+.col-registered { width: 13%; }
+.col-ips { width: 16%; }
+.col-ports { width: 9%; }
+.col-protocol { width: 7%; }
+.col-tunnel { width: 6%; text-align: center; }
+.col-hits { width: 7%; text-align: right; }
+.col-lastseen { width: 11%; }
+
+td.col-tunnel { text-align: center; }
 
 td.col-hits { text-align: right; }
 
@@ -560,6 +563,43 @@ td.col-hits { text-align: right; }
   gap: 8px;
   font-size: 13px;
   cursor: pointer;
+}
+
+/* === Tunnel subnets section === */
+.tunnel-subnets-section {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tunnel-subnets-section .section-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.tunnel-add {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.tunnel-add input {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  outline: none;
+}
+
+.tunnel-add input:focus {
+  border-color: var(--accent);
 }
 
 .blacklist-add {
@@ -658,3 +698,56 @@ td.col-hits { text-align: right; }
 input[type="checkbox"] {
   accent-color: var(--accent);
 }
+
+/* === Tunnel column === */
+.tunnel-icon {
+  font-size: 14px;
+  cursor: default;
+}
+
+.tunnel-icon.tunneled {
+  filter: hue-rotate(90deg);
+}
+
+.tunnel-icon.direct {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* === Failed connection highlighting === */
+tr.conn-failed td {
+  background: rgba(233, 69, 96, 0.12);
+}
+
+tr.conn-failed:hover td {
+  background: rgba(233, 69, 96, 0.2);
+}
+
+/* === Tracking indicator === */
+.tracking-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--success);
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  background: rgba(78, 204, 163, 0.1);
+  border: 1px solid rgba(78, 204, 163, 0.2);
+}
+
+.tracking-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: tracking-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes tracking-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+
+

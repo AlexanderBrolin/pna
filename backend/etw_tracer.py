@@ -171,27 +171,39 @@ def _get_extended_table(func, table_class, row_class, family, table_type):
 
 
 class FastConnectionPoller:
-    """Fast network connection tracker using GetExtendedTcpTable/UdpTable (50ms polling).
+    """Fast network connection tracker using GetExtendedTcpTable/UdpTable (20ms polling).
 
     Much faster than psutil.net_connections() — direct WinAPI calls via ctypes.
-    Polls every 50ms to catch short-lived connections that 500ms polling misses.
+    Polls every 20ms to catch short-lived connections.
+    Also tracks SYN_SENT states to detect failed TCP connections.
     """
 
-    POLL_INTERVAL = 0.05  # 50ms
+    POLL_INTERVAL = 0.02  # 20ms
+    SYN_SENT_TIMEOUT = 5.0  # seconds before declaring connection failed
+    # MIB_TCP_STATE constants
+    _STATE_SYN_SENT = 3
+    _STATE_ESTABLISHED = 5
 
-    def __init__(self, process_tree, on_connection_event):
+    def __init__(self, process_tree, on_connection_event, on_connection_failed=None):
         self._process_tree = process_tree
         self._on_connection = on_connection_event
+        self._on_failed = on_connection_failed
         self._running = False
         self._thread = None
         self._seen_connections = set()
+        # SYN_SENT tracking: {(ip, port): timestamp}
+        self._syn_sent = {}
+        # Connections that reached ESTABLISHED: {(ip, port)}
+        self._established = set()
 
     def start(self):
         self._running = True
         self._seen_connections.clear()
+        self._syn_sent.clear()
+        self._established.clear()
         self._thread = threading.Thread(target=self._poll_loop, daemon=True)
         self._thread.start()
-        logger.info("FastConnectionPoller started (50ms interval)")
+        logger.info("FastConnectionPoller started (20ms interval)")
 
     def stop(self):
         self._running = False
@@ -199,8 +211,11 @@ class FastConnectionPoller:
             self._thread.join(timeout=5)
             self._thread = None
         self._seen_connections.clear()
+        self._syn_sent.clear()
+        self._established.clear()
 
     def _poll_loop(self):
+        tick = 0
         while self._running:
             try:
                 self._poll_tcp4()
@@ -212,7 +227,32 @@ class FastConnectionPoller:
             if len(self._seen_connections) > 50000:
                 self._seen_connections.clear()
 
+            # Check for failed SYN_SENT every ~2s (100 ticks * 20ms)
+            tick += 1
+            if tick % 100 == 0:
+                self._check_syn_timeouts()
+                # Prevent unbounded growth
+                if len(self._established) > 50000:
+                    self._established.clear()
+
             time.sleep(self.POLL_INTERVAL)
+
+    def _check_syn_timeouts(self):
+        """Check for SYN_SENT connections that timed out (never became ESTABLISHED)."""
+        if not self._on_failed or not self._syn_sent:
+            return
+        now = time.time()
+        timed_out = []
+        for key, ts in list(self._syn_sent.items()):
+            if now - ts > self.SYN_SENT_TIMEOUT and key not in self._established:
+                timed_out.append(key)
+        for key in timed_out:
+            del self._syn_sent[key]
+            ip, port = key
+            try:
+                self._on_failed(ip, port, "TCP")
+            except Exception as e:
+                logger.debug(f"Connection failed callback error: {e}")
 
     def _poll_tcp4(self):
         rows = _get_extended_table(
@@ -235,6 +275,19 @@ class FastConnectionPoller:
             port = _port_from_dword(row.dwRemotePort)
             if port == 0:
                 continue
+
+            state = row.dwState
+            conn_key = (ip, port)
+
+            # Track SYN_SENT for failed connection detection
+            if state == self._STATE_SYN_SENT:
+                if conn_key not in self._syn_sent:
+                    self._syn_sent[conn_key] = time.time()
+            elif state == self._STATE_ESTABLISHED:
+                self._established.add(conn_key)
+                # Remove from syn_sent if it was there
+                self._syn_sent.pop(conn_key, None)
+
             key = (pid, ip, port)
             if key not in self._seen_connections:
                 self._seen_connections.add(key)
@@ -261,6 +314,18 @@ class FastConnectionPoller:
             port = _port_from_dword(row.dwRemotePort)
             if port == 0:
                 continue
+
+            state = row.dwState
+            conn_key = (ip, port)
+
+            # Track SYN_SENT for failed connection detection
+            if state == self._STATE_SYN_SENT:
+                if conn_key not in self._syn_sent:
+                    self._syn_sent[conn_key] = time.time()
+            elif state == self._STATE_ESTABLISHED:
+                self._established.add(conn_key)
+                self._syn_sent.pop(conn_key, None)
+
             key = (pid, ip, port)
             if key not in self._seen_connections:
                 self._seen_connections.add(key)
@@ -469,10 +534,11 @@ class RawSocketUdpCapture:
 class ETWTracer:
     """Hybrid tracer: DNS ETW + GetExtendedTcpTable (TCP) + raw socket (UDP)."""
 
-    def __init__(self, process_tree, on_dns_event, on_connection_event):
+    def __init__(self, process_tree, on_dns_event, on_connection_event, on_connection_failed=None):
         self._process_tree = process_tree
         self._on_dns = on_dns_event
         self._on_connection = on_connection_event
+        self._on_failed = on_connection_failed
         self._running = False
         self._dns_etw = None
         self._dns_thread = None
@@ -490,9 +556,9 @@ class ETWTracer:
         self._dns_thread = threading.Thread(target=self._run_dns_trace, daemon=True)
         self._dns_thread.start()
 
-        # Start fast TCP connection poller (GetExtendedTcpTable, 50ms)
+        # Start fast TCP connection poller (GetExtendedTcpTable, 20ms)
         self._connection_poller = FastConnectionPoller(
-            self._process_tree, self._on_connection
+            self._process_tree, self._on_connection, self._on_failed
         )
         self._connection_poller.start()
 
