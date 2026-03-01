@@ -18,9 +18,19 @@
     "appId": "com.processnetanalyzer.app",
     "productName": "Process Network Analyzer",
     "win": {
-      "target": "dir",
+      "target": [
+        "nsis",
+        "dir"
+      ],
       "requestedExecutionLevel": "requireAdministrator",
       "sign": "./sign.js"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": null,
+      "uninstallerIcon": null,
+      "installerHeaderIcon": null
     },
     "forceCodeSigning": false,
     "files": [
